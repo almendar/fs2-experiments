@@ -24,14 +24,12 @@ object VectorOfEffects extends IOApp {
       case t: Throwable => IO(t.printStackTrace) *> io
     }
   }
-  def launcheMissles(cityId: Int): IO[AttackResult] = IO {
-    val ret = scala.util.Random.nextInt()
-    if (ret % 2 == 0) throw new RuntimeException(cityId.toString)
-    else {
-      println(s"Destroying $cityId")
-      AttackResult(ret)
-    }
-  }
+  def launcheMissles(cityId: Int): IO[AttackResult] =
+    for {
+      rand <- IO(scala.util.Random.nextInt())
+      _    <- IO(if (rand % 2 == 0) throw new RuntimeException(cityId.toString))
+      -    <- IO(println(s"Destroying $cityId"))
+    } yield AttackResult(rand)
 
   def launcheMisslesWithRetry(cityId: Int)(implicit timer: Timer[IO]): IO[AttackResult] =
     logError(retryWithBackoff(launcheMissles(cityId), 0.seconds, 10))
@@ -39,13 +37,10 @@ object VectorOfEffects extends IOApp {
   val citiesToDestroy: Vector[Int] = (1 to 100).toVector
 
   def run(args: List[String]): IO[ExitCode] =
-    citiesToDestroy
-      .map(launcheMisslesWithRetry)
-      .map(_.attempt)
-      .sequence
-      .map { x: Vector[Either[Throwable, AttackResult]] =>
-        x.flatMap(y => y.toOption)
-      }
-      .as(ExitCode.Success)
-
+    for {
+      launched <- citiesToDestroy.traverse(i => launcheMisslesWithRetry(i).attempt)
+      result = launched.flatMap(_.toOption)
+    } yield {
+      ExitCode.Success
+    }
 }
